@@ -385,7 +385,7 @@ class DenseNetWithTemporalResidual(nn.Module):
         num_layers_block2: int = 3,
         # temporal
         temporal_mode: str = "tcn",       # "tcn" | "gru"
-        d_model: int = None,              # nếu None, dùng C của backbone
+        d_model: int = None,             
         tcn_kernel: int = 3,
         tcn_layers: int = 2,
         tcn_dropout: float = 0.1,
