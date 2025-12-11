@@ -161,7 +161,7 @@ def parse_args():
     parser.add_argument("--video-root", type=str, default="videos",
                         help="Thư mục chứa video_id.mp4")
 
-    parser.add_argument("--epochs", type=int, default=12)   # <== mặc định 12 epoch
+    parser.add_argument("--epochs", type=int, default=12)  
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--num-frames", type=int, default=16)
