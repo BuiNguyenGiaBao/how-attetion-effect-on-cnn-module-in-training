@@ -33,7 +33,7 @@ how-attention-effect-on-cnn-module-in-training/
 ├── training_module_video.py    # Video training pipeline
 │
 ├── data/
-│   ├── images/                 # Image dataset
+│   ├── images /                 # Or differnt dataset you perfer
 │   └── WLASL/                  # Video dataset (WLASL MP4)
 │
 ├── README.md
