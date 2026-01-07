@@ -148,6 +148,15 @@ class TemporalConvNet(nn.Module):
         causal: bool = True,
     ):
         super().__init__()
+        # Accept both int and list/tuple for channels
+        # (Older code sometimes calls TemporalConvNet(in_ch, channels=int))
+        if isinstance(channels, int):
+            channels = [channels]
+        elif isinstance(channels, tuple):
+            channels = list(channels)
+        elif channels is None:
+            raise ValueError('channels must be an int or a list/tuple of ints')
+
         layers = []
         cur_in = in_ch
         for i, ch in enumerate(channels):

@@ -1,168 +1,176 @@
-from __future__ import annotations
-import argparse, random, time
+import json
 from pathlib import Path
-from typing import Dict
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import datasets
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+from torchvision.io import read_video
+
+from cnn_for_video import VideoClassifier
 
 
-def set_seed(seed: int):
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = True
+class WLASLMP4Dataset(Dataset):
+    def __init__(self, root, json_file, split,
+                 num_frames=8, limit_classes=10,
+                 transform=None, shared_gloss_to_idx=None):
+        self.root = Path(root)
+        self.videos_dir = self.root / "videos"
+        self.num_frames = num_frames
+        self.transform = transform
 
+        # Load class map
+        class_map = {}
+        with open(self.root / "wlasl_class_list.txt", "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    class_map[int(parts[0])] = " ".join(parts[1:])
 
-def apply_video_transform(video: torch.Tensor, img_size: int):
-    if video.dtype == torch.uint8:
-        video = video.float() / 255.0
-    video = F.interpolate(video, size=(img_size, img_size),
-                          mode="bilinear", align_corners=False)
-    mean = torch.tensor([0.485, 0.456, 0.406], device=video.device).view(1,3,1,1)
-    std  = torch.tensor([0.229, 0.224, 0.225], device=video.device).view(1,3,1,1)
-    return (video - mean) / std
+        meta = json.loads((self.root / json_file).read_text(encoding="utf-8"))
 
+        items = []
+        for vid, info in meta.items():
+            if info.get("subset") != split:
+                continue
+            actions = info.get("action", [])
+            if not actions:
+                continue
+            gloss = class_map.get(actions[0])
+            if gloss is None:
+                continue
+            mp4 = self.videos_dir / f"{vid}.mp4"
+            if mp4.exists():
+                items.append((str(mp4), gloss))
 
-class UCF101Clips(Dataset):
-    def __init__(self, base_ds, img_size: int):
-        self.base = base_ds
-        self.img_size = img_size
+        if shared_gloss_to_idx is None:
+            glosses = sorted({g for _, g in items})[:limit_classes]
+            self.gloss_to_idx = {g: i for i, g in enumerate(glosses)}
+        else:
+            self.gloss_to_idx = shared_gloss_to_idx
+
+        self.samples = [
+            (p, self.gloss_to_idx[g])
+            for p, g in items
+            if g in self.gloss_to_idx
+        ]
 
     def __len__(self):
-        return len(self.base)
+        return len(self.samples)
+
+    def _sample_indices(self, n):
+        if n <= self.num_frames:
+            return torch.linspace(0, n - 1, steps=self.num_frames).long()
+        start = (n - self.num_frames) // 2
+        return torch.arange(start, start + self.num_frames)
 
     def __getitem__(self, idx):
-        item = self.base[idx]
-        video = item[0]
-        label = item[2] if len(item) >= 3 else item[1]
-        video = apply_video_transform(video, self.img_size)
-        return video, int(label)
+        path, label = self.samples[idx]
+        video, _, _ = read_video(path, pts_unit="sec")
+        if video.numel() == 0:
+            video = torch.zeros((self.num_frames, 224, 224, 3), dtype=torch.uint8)
 
+        n = video.shape[0]
+        idxs = self._sample_indices(n).clamp(0, max(n - 1, 0))
+        clip = video[idxs].permute(0, 3, 1, 2)
 
-class RemapLabels(Dataset):
-    def __init__(self, base, remap: Dict[int, int]):
-        self.base = base
-        self.remap = remap
+        if self.transform:
+            clip = torch.stack([self.transform(f) for f in clip])
 
-    def __len__(self):
-        return len(self.base)
-
-    def __getitem__(self, idx):
-        video, y = self.base[idx]
-        return video, self.remap.get(int(y), int(y))
-
-
-def build_ucf101(args):
-    base_train = datasets.UCF101(
-        root=args.data_root,
-        annotation_path=args.ann_root,
-        frames_per_clip=args.num_frames,
-        step_between_clips=args.step_between_clips,
-        train=True,
-        fold=args.fold,
-        num_workers=args.decode_workers,
-    )
-    base_val = datasets.UCF101(
-        root=args.data_root,
-        annotation_path=args.ann_root,
-        frames_per_clip=args.num_frames,
-        step_between_clips=args.step_between_clips,
-        train=False,
-        fold=args.fold,
-        num_workers=args.decode_workers,
-    )
-
-    classes = base_train.classes
-    subset = classes[:args.subset_n] if args.subset_n > 0 else classes
-    class_to_idx = base_train.class_to_idx
-    keep = [class_to_idx[c] for c in subset]
-
-    train_idx = [i for i in range(len(base_train)) if int(base_train[i][2]) in keep]
-    val_idx   = [i for i in range(len(base_val)) if int(base_val[i][2]) in keep]
-
-    base_train = Subset(base_train, train_idx)
-    base_val   = Subset(base_val, val_idx)
-
-    remap = {old: new for new, old in enumerate(keep)}
-    train_ds = RemapLabels(UCF101Clips(base_train, args.img_size), remap)
-    val_ds   = RemapLabels(UCF101Clips(base_val, args.img_size), remap)
-
-    return train_ds, val_ds, subset
-
-
-def build_model(args):
-    from cnn_for_video import VideoClassifier
-    return VideoClassifier(num_classes=args.num_classes, temporal_mode=args.temporal_mode)
-
-
-@torch.no_grad()
-def evaluate(model, loader, criterion, device):
-    model.eval()
-    correct = total = loss_sum = 0
-    for x, y in loader:
-        x, y = x.to(device), y.to(device)
-        out = model(x)
-        loss = criterion(out, y)
-        loss_sum += loss.item() * y.size(0)
-        correct += (out.argmax(1) == y).sum().item()
-        total += y.size(0)
-    return loss_sum/total, correct/total
+        return clip, label
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--data_root", required=True)
-    p.add_argument("--ann_root", required=True)
-    p.add_argument("--subset_n", type=int, default=5)
-    p.add_argument("--num_frames", type=int, default=16)
-    p.add_argument("--step_between_clips", type=int, default=8)
-    p.add_argument("--decode_workers", type=int, default=2)
-    p.add_argument("--img_size", type=int, default=112)
-    p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--batch_size", type=int, default=8)
-    p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--temporal_mode", default="tcn")
-    p.add_argument("--fold", type=int, default=1)
-    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    p.add_argument("--data_root", default="D:/hand-sign-detector-using-2-mixure-cnn-for-picture-and-video/data")
-    p.add_argument("--ann_root", default="D:/datasets/ucfTrainTestlist")
+    ROOT = r"D:\hand-sign-detector-using-2-mixure-cnn-for-picture-and-video\data\WLASL"
+    JSON_FILE = "nslt_100.json"
 
-    args = p.parse_args()
+    NUM_FRAMES = 8
+    LIMIT_CLASSES = 10
+    EPOCHS = 20
+    BATCH_SIZE = 4
+    TEMPORAL_MODE = "tcn"
+    LR = 1e-3
+    PATIENCE = 5
 
-    set_seed(42)
-    device = torch.device(args.device)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_ds, val_ds, classes = build_ucf101(args)
-    args.num_classes = len(classes)
+    tf = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize((0.485, 0.456, 0.406),
+                             (0.229, 0.224, 0.225)),
+    ])
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size,
-                              shuffle=True, num_workers=4, drop_last=False)
-    val_loader   = DataLoader(val_ds, batch_size=args.batch_size,
-                              shuffle=False, num_workers=4, drop_last=False)
+    train_ds = WLASLMP4Dataset(
+        ROOT, JSON_FILE, "train",
+        num_frames=NUM_FRAMES,
+        limit_classes=LIMIT_CLASSES,
+        transform=tf
+    )
 
-    model = build_model(args).to(device)
+    val_ds = WLASLMP4Dataset(
+        ROOT, JSON_FILE, "test",
+        num_frames=NUM_FRAMES,
+        limit_classes=LIMIT_CLASSES,
+        transform=tf,
+        shared_gloss_to_idx=train_ds.gloss_to_idx
+    )
+
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE,
+                              shuffle=True, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE,
+                            shuffle=False, num_workers=2, pin_memory=True)
+
+    model = VideoClassifier(
+        num_classes=len(train_ds.gloss_to_idx),
+        temporal_mode=TEMPORAL_MODE
+    ).to(device)
+
+    for name, param in model.named_parameters():
+        if "cnn" in name or "backbone" in name:
+            param.requires_grad = False
+
     criterion = nn.CrossEntropyLoss()
-    optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=LR
+    )
 
-    best = 0.0
-    for ep in range(1, args.epochs+1):
+    best_acc = 0.0
+    bad_epochs = 0
+
+    @torch.no_grad()
+    def evaluate():
+        model.eval()
+        correct = total = 0
+        for x, y in val_loader:
+            x, y = x.to(device), y.to(device)
+            out = model(x)
+            correct += (out.argmax(1) == y).sum().item()
+            total += y.size(0)
+        return correct / max(1, total)
+
+    for ep in range(1, EPOCHS + 1):
         model.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
-            optim.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss = criterion(model(x), y)
             loss.backward()
-            optim.step()
+            optimizer.step()
 
-        _, acc = evaluate(model, val_loader, criterion, device)
-        print(f"Epoch {ep:03d} | val_acc={acc:.4f}")
-        best = max(best, acc)
+        acc = evaluate()
+        print(f"Epoch {ep:02d}/{EPOCHS} | val_acc={acc:.4f}")
 
-    print(f"Best val_acc={best:.4f}")
+        if acc > best_acc:
+            best_acc = acc
+            bad_epochs = 0
+        else:
+            bad_epochs += 1
+            if bad_epochs >= PATIENCE:
+                print("Early stopping")
+                break
+
+    print(f"Best val_acc = {best_acc:.4f}")
 
 
 if __name__ == "__main__":
