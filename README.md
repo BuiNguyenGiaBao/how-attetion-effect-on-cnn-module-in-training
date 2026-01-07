@@ -1,8 +1,3 @@
-OK 👍 mình viết cho bạn **README hoàn chỉnh – đúng chất side project học thuật**, giải thích **rõ ràng vì sao val acc dao động nhưng hợp lý**, và **bảo vệ được kết quả 0.30**.
-
-Bạn chỉ cần **copy dán** vào `README.md`.
-
----
 
 # 🖐️ Hand Sign Recognition with CNN + Temporal Attention (WLASL)
 
