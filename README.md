@@ -206,6 +206,3 @@ This project is released for **educational and research purposes**.
 
 If you are interested in **training dynamics**, **attention mechanisms**, or **small-data learning**, this repository provides a clean and interpretable experimental baseline.
 
-
-
-👉 nói mình làm tiếp nhé.
