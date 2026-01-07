@@ -1,50 +1,73 @@
 # 🧠 How Attention Affects CNN Modules During Training
 
-## 🖼️ Part I — Image Classification with CNN + Spatial Attention
+This repository explores **how attention mechanisms influence CNN-based models during training**, through comparative experiments on **image classification** and **video-based recognition** tasks.
 
-### 📌 Objective
+The project is intended as a **public side project** focusing on:
 
-This part of the project investigates **how spatial attention mechanisms influence CNN training behavior in image classification tasks**.
+* training dynamics,
+* model behavior under limited data,
+* and the practical role of attention mechanisms.
 
-Instead of focusing solely on peak accuracy, the experiment emphasizes:
-
-* training stability,
-* generalization behavior,
-* and the role of attention in guiding feature learning.
-
----
-
-### 🧠 Model Design
-
-* Backbone: Convolutional Neural Network (CNN)
-* Attention: Spatial attention modules integrated into CNN layers
-* Output: Image-level classification
-
-The attention mechanism allows the model to:
-
-* emphasize informative regions in the image,
-* suppress irrelevant background features,
-* and guide gradient flow during training.
-
-> In this context, attention is treated as a **feature selection facilitator** rather than a standalone performance booster.
+> ⚠️ This project does **not** aim for state-of-the-art performance.
+> Instead, it emphasizes **correct methodology, interpretability, and reproducibility**.
 
 ---
 
-### ⚙️ Training Configuration (Image)
+## 📌 Key Questions
 
-* Loss function: Cross-Entropy Loss
+* Does attention improve CNN training stability?
+* How does attention behave differently in image vs. video tasks?
+* What are the practical limits of attention under small-data constraints?
+
+---
+
+## 📂 Project Structure
+
+```text
+how-attention-effect-on-cnn-module-in-training/
+│
+├── cnn_for_pic.py              # CNN for images (with spatial attention)
+├── cnn_for_video.py            # CNN for videos (with temporal attention)
+│
+├── training_module_picture.py  # Image training pipeline
+├── training_module_video.py    # Video training pipeline
+│
+├── data/
+│   ├── images/                 # Image dataset
+│   └── WLASL/                  # Video dataset (WLASL MP4)
+│
+├── README.md
+└── requirements.txt
+```
+
+---
+
+## 🖼️ Part I — Image Classification (CNN + Spatial Attention)
+
+### Overview
+
+This experiment evaluates the effect of **spatial attention** on CNN training for image classification.
+
+Spatial attention modules are integrated into the CNN to help the model:
+
+* focus on informative regions,
+* suppress background noise,
+* and stabilize feature learning.
+
+---
+
+### Training Setup (Image)
+
+* Task: Image classification
+* Model: CNN with spatial attention
+* Loss: Cross-Entropy
 * Optimizer: Adam / AdamW
-* Learning rate: Cosine decay schedule
-* Number of epochs: 100
-* Hardware: Single consumer GPU
-
-The training process follows a standard supervised learning setup, with attention modules enabled throughout all epochs.
+* Learning rate schedule: Cosine decay
+* Epochs: 100
 
 ---
 
-### 📊 Experimental Results
-
-Representative training log from the final epochs:
+### Results (Image)
 
 ```text
 Epoch 099/100 | train_acc=0.5447 | val_acc=0.4835
@@ -52,110 +75,50 @@ Epoch 100/100 | train_acc=0.5440 | val_acc=0.4855
 Best val_acc = 0.4895
 ```
 
----
+#### Interpretation
 
-### 🔍 Result Analysis
-
-Key observations:
-
-* The model achieves a **best validation accuracy of approximately 49%**, which is considered strong for a lightweight CNN under limited training conditions.
-* Training and validation accuracies remain **closely aligned**, indicating:
-
-  * good generalization,
-  * no severe overfitting.
-* The learning curve is smooth, suggesting that attention modules contribute to:
-
-  * more stable optimization,
-  * better convergence behavior.
-
-> Spatial attention helps the CNN learn *where to focus* during training, leading to improved feature discrimination.
+* Validation accuracy reaches **~49%**, which is strong for a lightweight CNN.
+* Training and validation accuracies remain close, indicating **good generalization**.
+* Attention contributes to **smoother convergence and stable learning behavior**.
 
 ---
 
-### 🧪 Discussion
+## 🎥 Part II — Video Classification (CNN + Temporal Attention)
 
-The image-based experiment demonstrates that:
+### Overview
 
-* Spatial attention enhances CNN training stability.
-* Performance gains are **consistent but moderate**, aligning with the expectation that attention refines feature learning rather than fundamentally altering model capacity.
-* Compared to video-based tasks, image classification benefits more clearly from attention due to:
+This experiment studies **temporal attention** in CNN-based video classification using hand sign recognition as a test case.
 
-  * cleaner input signals,
-  * lower variability,
-  * and the absence of temporal noise.
+Compared to images, video learning introduces:
 
----
-
-### ✅ Conclusion (Part I)
-
-In image classification tasks, incorporating spatial attention into CNN architectures leads to:
-
-* smoother training dynamics,
-* improved generalization,
-* and stable validation performance.
-
-These results support the hypothesis that **attention mechanisms positively influence CNN modules during training**, especially in scenarios with limited data and constrained computational resources.
-
-## 🎥 Part II — Video Classification with CNN + Temporal Attention
-
-### 📌 Objective
-
-This part of the project examines **how temporal attention mechanisms affect CNN-based models during video training**, using hand sign recognition as a representative task.
-
-Unlike image classification, video-based learning introduces additional challenges related to:
-
-* temporal dynamics,
-* motion variability,
-* and noisy frame sequences.
-
-The experiment focuses on understanding **training behavior and generalization**, rather than maximizing raw accuracy.
+* temporal variability,
+* motion noise,
+* and significantly higher data complexity.
 
 ---
 
-### 📂 Dataset: WLASL (Word-Level American Sign Language)
+### Dataset
 
-* Input format: Short MP4 videos
-* Task: Word-level sign classification
-* Dataset characteristics:
+* Dataset: WLASL (Word-Level American Sign Language)
+* Input: Short MP4 videos
+* Subset: 10 classes
+* Sampling: Center frames only
 
-  * High inter-signer variability
-  * Inconsistent video lengths
-  * Background clutter
-  * Very limited validation samples
-
-To keep the experiment tractable:
-
-* Only **10 classes** are selected
-* Only **center frames** of each video are sampled
-* No large-scale video pretraining is used
-
-> These constraints intentionally reflect a realistic small-data scenario.
+> The small validation split makes evaluation metrics inherently noisy.
 
 ---
 
-### 🧠 Model Architecture (Video)
+### Model Design (Video)
 
-The video pipeline consists of two main components:
+* **CNN Backbone**
+  Extracts frame-level spatial features (frozen during training).
 
-#### 1️⃣ Spatial Feature Extractor (CNN)
-
-* A 2D CNN backbone extracts frame-level spatial features.
-* The backbone is **frozen during training** to:
-
-  * reduce overfitting,
-  * stabilize optimization,
-  * prevent learning background noise.
-
-#### 2️⃣ Temporal Attention Module
-
-* Temporal modeling is implemented using a **Temporal Convolutional Network (TCN)**.
-* The TCN aggregates frame-level features across time and captures motion-related patterns.
-
-In this context, the temporal module acts as a form of **attention over time**, highlighting informative temporal segments within each video.
+* **Temporal Attention Module (TCN)**
+  Aggregates features across time and highlights informative motion segments.
 
 ---
 
-### ⚙️ Training Configuration (Video)
+### Training Setup (Video)
 
 ```text
 NUM_FRAMES     = 8
@@ -167,17 +130,9 @@ LEARNING_RATE  = 1e-3
 GPU            = RTX 3050 (6GB)
 ```
 
-Additional design choices:
-
-* Fixed center-frame sampling (no random temporal cropping)
-* Early stopping based on validation accuracy
-* Best checkpoint selected by **peak validation accuracy**, not the final epoch
-
 ---
 
-### 📊 Experimental Results
-
-Representative validation accuracy across epochs:
+### Results (Video)
 
 ```text
 Epoch 01 | val_acc = 0.30
@@ -187,74 +142,70 @@ Epoch 04 | val_acc = 0.20
 Epoch 05 | val_acc = 0.00
 ```
 
----
+#### Interpretation
 
-### 🔍 Result Analysis
-
-Key observations:
-
-* Validation accuracy **fluctuates significantly** across epochs.
-* The highest validation accuracy (**~30%**) occurs in early epochs.
-* Such behavior is expected due to:
+* Validation accuracy fluctuates due to:
 
   * extremely small validation set,
   * class imbalance,
-  * high variability in video content.
-
-Importantly, the model demonstrates **learning capability**, as validation accuracy is:
-
-* non-constant,
-* sensitive to training progress,
-* and responsive to temporal modeling.
-
-> The best-performing checkpoint is selected based on peak validation accuracy.
+  * high inter-signer variability.
+* The **best-performing checkpoint (~30%)** is selected based on peak validation accuracy.
 
 ---
 
-### 🧪 Discussion
+## 🧪 Discussion
 
-The video-based experiment highlights several important insights:
+Across both tasks, the experiments show that:
 
-* Temporal attention improves learning behavior compared to naive frame averaging.
-* However, the benefit is constrained by:
+* Attention improves **training stability and feature focus**.
+* Performance gains are **context-dependent**:
 
-  * limited training data,
-  * lack of pretrained video representations,
-  * high temporal noise.
-* Compared to image classification, video recognition is inherently more unstable and data-hungry.
-
-These findings suggest that **attention mechanisms alone are insufficient to overcome data scarcity in video tasks**, but they still contribute positively to feature aggregation and learning stability.
+  * clearer and more stable for images,
+  * limited and noisy for videos.
+* Attention acts more as a **training facilitator** than a guaranteed performance booster.
 
 ---
 
-### ⚠️ Limitations
+## ⚠️ Limitations
 
-* Very small validation split → high metric variance
-* No video-level pretraining (e.g., I3D, SlowFast)
+* Small datasets → high variance in evaluation
+* No large-scale video pretraining
 * Lightweight temporal modeling
-* Results are not directly comparable to benchmark studies
+* Results are not directly comparable to benchmark models
 
 ---
 
-### ✅ Conclusion (Part II)
+## ✅ Conclusion
 
-In video classification tasks, incorporating temporal attention into CNN-based models:
+This project demonstrates that attention mechanisms:
 
-* improves training responsiveness,
-* enables the model to capture motion-related cues,
-* but yields limited accuracy gains under small-data constraints.
+* positively influence CNN training behavior,
+* improve learning stability,
+* but do not overcome fundamental data limitations.
 
-Overall, this experiment demonstrates that **temporal attention affects how CNNs learn from videos**, even when absolute performance remains modest.
+The contrast between image and video tasks highlights that **the effectiveness of attention strongly depends on input modality and data quality**.
 
 ---
 
-## 🧠 Overall Insight (Connecting Part I & II)
+## 🚀 Future Work
 
-* **Image + Spatial Attention** → stable and clear performance gains
-* **Video + Temporal Attention** → improved learning behavior, but constrained by data and temporal noise
+* Compare attention vs. non-attention models under identical settings
+* Use pretrained video backbones (I3D, SlowFast)
+* Explore transformer-based temporal attention
+* Expand to larger WLASL subsets
 
-This contrast highlights that **the effectiveness of attention mechanisms strongly depends on the input modality and data quality**.
+---
+
+## 📄 License
+
+This project is released for **educational and research purposes**.
+
+---
+
+### 🔚 Final Note
+
+If you are interested in **training dynamics**, **attention mechanisms**, or **small-data learning**, this repository provides a clean and interpretable experimental baseline.
 
 
 
-
+👉 nói mình làm tiếp nhé.
